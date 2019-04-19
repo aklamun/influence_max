@@ -1,0 +1,284 @@
+\documentclass[11pt]{article}
+\usepackage[letterpaper,margin=1in]{geometry}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+% \usepackage{tgschola} % or any other font package you like
+\usepackage{lastpage}
+\usepackage{parskip} % Remove paragraph indentation
+\usepackage{amsmath} % for align
+\usepackage{amsthm} % for proof pkg
+\usepackage{amssymb}
+%\usepackage{tikz}
+\usepackage{graphicx}
+\usepackage{proof}
+\usepackage{enumitem}
+% \usepackage[shortlabels]{enumerate}
+\usepackage{algorithm}
+\usepackage{algorithmicx}
+\usepackage{algpseudocode}
+\usepackage{subcaption}
+
+\usepackage{listings}
+\usepackage{color}
+
+\definecolor{dkgreen}{rgb}{0,0.6,0}
+\definecolor{gray}{rgb}{0.5,0.5,0.5}
+\definecolor{mauve}{rgb}{0.58,0,0.82}
+
+\lstset{frame=tb,
+	language=Java,
+	aboveskip=3mm,
+	belowskip=3mm,
+	showstringspaces=false,
+	columns=flexible,
+	basicstyle={\small\ttfamily},
+	numbers=none,
+	numberstyle=\tiny\color{gray},
+	keywordstyle=\color{blue},
+	commentstyle=\color{dkgreen},
+	stringstyle=\color{mauve},
+	breaklines=true,
+	breakatwhitespace=true,
+	tabsize=3
+}
+
+
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{corollary}{Corollary}[theorem]
+\newtheorem{lemma}[theorem]{Lemma}
+
+\renewcommand{\algorithmicrequire}{\textbf{Input:}}  % Use Input in the format of Algorithm
+\renewcommand{\algorithmicensure}{\textbf{Output:}} % Use Output in the format of Algorithm  
+
+
+
+\newcommand{\yourtitle}{Influence Maximization}
+
+
+\newtheorem{claim}{Claim}
+
+\pagestyle{fancy}
+\headheight 13.6pt
+\fancyhf{}
+\fancyhead[L]{%
+  \footnotesize%\sffamily
+  \yourtitle}
+\fancyfoot[C]{\thepage\ of \pageref{LastPage}}
+% \usepackage[
+%   colorlinks,
+%   breaklinks,
+%   pdftitle={\yourname - \soptitle},
+%   pdfauthor={\yourname},
+%   unicode
+% ]{hyperref}
+
+\begin{document}
+
+\newcommand{\Half}{\frac{1}{2}}
+
+
+
+\begin{center}\LARGE\yourtitle\\
+\large Ariah Klages-Mundt (aak228)
+\end{center}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\paragraph{Influence maximization}
+Social networks (among others) involve processes for influence propagation in the network. Examples include diffusion of technological innovation, beliefs, product adoption, and posting of `viral' content. A natural question is how to engineer such a viral cascade given information about the network. Such a problem is to maximize influence propagation by choosing an optimal set of seed nodes $S$ to directly influence given a budget $b$.
+
+The {\em Linear Threshold Model} is a simple model for influence propagation. In this model, a node $v$ is influenced by each of its neighbors $w$ by amount $b_{v,w}$ such that $\sum_{w\sim v} b_{v,w} \leq 1$. Each node $v$ further has a threshold $\theta_v$, which gives the weighted fraction of $v$'s neighbors that, if activated, in turn activate $v$. {\em Integral Influence Maximization}, studied in \cite{kempe03}, focuses on finding an optimal seed set $S$ on which to spend $\theta_v$ on $v$ for each $v\in S$.
+
+A generalization of the integral case leads to {\em Fractional Influence Maximization}, as studied in \cite{demaine14}. In this problem, we choose a vector $\mathbf{x}$ with $\mathbf{1}^T \mathbf{x}\leq b$ of influence to exert on nodes. The amounts can be a fraction of the thresholds of the nodes. This allows more efficient use of budget $b$ to influence an effective seed set $S$. In particular, this takes advantage of the fact that we don't have to spend as much to influence a node that already has partial influence exerted from other influenced nodes.
+
+
+Both the integral problem of selecting the optimal seed set $S$ and the fractional problem of selecting the optimal influence vector $\mathbf{x}$ are NP-hard, as shown in \cite{kempe03}, \cite{demaine14}. Further, they are also hard to approximate to within any general nontrivial factor.
+
+However, when we consider a modified problem with uncertain thresholds--e.g., if activation thresholds for influence are uniform random variables--then the problem changes enough in expectation to lower complexity. In particular, the expected cascade size from a given seed set becomes submodular and allows a greedy approximation that is provably within $(1-1/e)\approx 63\%$ of optimal (\cite{kempe03},\cite{demaine14}). This works for the linear threshold model as well as more general threshold models, as shown in \cite{mossel07}.
+
+I define the greedy algorithms for integral influence maximization and fractional influence maximization below. The general structure of these algorithms is to start with an empty seed set $S$ and, iteratively, add the node $v$ to $S$ that gives the maximum marginal gain. Since the thresholds are random (distributed by $\Theta$), determining the maximum marginal gain involves estimating the expected size of resulting cascades $\sigma(S\cup\{v\}) = \mathbf{E}_\Theta \Big[\text{cascade size} | S\cup\{v\}\Big]$. A similar definition applies to $\sigma(\mathbf x)$. This is typically done through Monte Carlo estimation of the expectation, which can make these greedy algorithms prohibitively slow, although still within polynomial time complexity.
+
+I also define the heuristic algorithm \texttt{DiscountFrac} used in \cite{demaine14} that tries to estimate the greedy algorithm in faster time. This algorithm uses a similar greedy approach. Starting with an empty seed set $S$, it iteratively adds the node $v$ to $S$ that would exert the most total influence on the remaining unactivated nodes.
+
+The algorithms below use the following problem setting:
+\begin{itemize}
+	\item $f(S)$ outputs the vector of influence exerted by the activation of node set $S$ on each node. In the analysis, we define $f$ to give the linear threshold model.
+	\item $w(S)$ outputs a weight of node set $S$.  In the analysis, we define $w$ to weight each node by 1.
+	\item $\Theta = \text{uniform}[0,1]^n$ is the distribution for node thresholds ($n$=number of nodes).
+	\item $b$ = budget.
+\end{itemize}
+
+
+%%%%%%% CalcIntCascade
+\begin{algorithm}[H]
+	\algorithmicrequire { set $S$, set function $f$, thresholds $\theta$}
+	\begin{algorithmic}
+		\State Initialize $S_0 \leftarrow \emptyset$, $S_1 \leftarrow S$, $i \leftarrow 1$
+		\While {$S_i \neq S_{i-1}$}
+		\State $S_{i+1} = \{\text{node } v | f(S_i)[v] \geq \theta[v]\}\cup S_i$
+		\State $i \leftarrow i+1$
+		\EndWhile
+		\State \Return $S_i$
+	\end{algorithmic}
+	\caption{$\texttt{CalcIntCascade}(S;f,\theta)$} \label{alg:calc_int_cascade}
+\end{algorithm}
+
+%%%%%%% Integral \sigma(S)
+\begin{algorithm}[H]
+	\algorithmicrequire { set $S$, set function $f$, weight function $w$, thresholds distr. $\Theta$, sample size $k=10,000$}
+	\begin{algorithmic}
+		\State Initialize $\sigma \leftarrow 0$
+		\For {$i \leq k$}
+		\State Sample $\theta \sim \Theta$
+		\State $T, = \texttt{CalcIntCascade}\Big( S; f, \theta \Big)$
+		\State $\sigma \leftarrow \sigma + w(T)$
+		\EndFor
+		\State \Return $\sigma/k$
+	\end{algorithmic}
+	\caption{$\hat\sigma(S)$ estimate of $\sigma(S)$ for integral influence} \label{alg:sigma}
+\end{algorithm}
+
+%%%%%%% Integral greedy
+\begin{algorithm}[H]
+	\algorithmicrequire { set function $f$, weight function $w$, thresholds distr. $\Theta$, budget $b$}
+	\begin{algorithmic}
+		\State Initialize $S_0 \leftarrow \emptyset$, $i\leftarrow 0$
+		\While {$|S_i| < b$}
+		\For {node $v \notin S_i$}
+		\State $\mathbf{q}[v] = \hat\sigma\Big(S_i \cup \{v\}; f, \Theta, w \Big)$
+		\EndFor
+		\State $S_{i+1} \leftarrow S_{i}\cup \{\arg\max \mathbf{q}\}$, $i\leftarrow i + 1$
+		\EndWhile
+		\If {$|S_i| \leq b$}
+		\State \Return $S_i$
+		\Else
+		\State \Return $S_{i-1}$
+		\EndIf
+	\end{algorithmic}
+	\caption{\texttt{GreedyIntInfMax} = Greedy algorithm for integral influence maximization} \label{alg:int_greedy}
+\end{algorithm}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%% CalcFracCascade
+\begin{algorithm}[H]
+	\algorithmicrequire { vector $\mathbf{x}$, set function $f$, thresholds $\theta$}
+	\begin{algorithmic}
+		\State Initialize $S_0 \leftarrow \emptyset$, $i\leftarrow 1$
+		\State $S_1 \leftarrow \{\text{node } v | \mathbf{x}[v] \geq \theta[v]\}$
+		\While {$S_i \neq S_{i-1}$}
+		\State $S_{i+1} = \{\text{node } v | f(S_i)[v] + \mathbf{x}[v] \geq \theta[v]\}$
+		\State $i \leftarrow i+1$
+		\EndWhile
+		\State \Return $S_i$
+	\end{algorithmic}
+	\caption{$\texttt{CalcFracCascade}(\mathbf x;f,\theta)$} \label{alg:calc_int_cascade}
+\end{algorithm}
+
+%%%%%%% Fractional \sigma(x)
+\begin{algorithm}[H]
+	\algorithmicrequire { vector $\mathbf x$, set function $f$, weight function $w$, thresholds distr. $\Theta$, sample size $k=10,000$}
+	\begin{algorithmic}
+		\State Initialize $\sigma \leftarrow 0$
+		\For {$i \leq k$}
+		\State Sample $\theta \sim \Theta$
+		\State $T = \texttt{CalcFracCascade}\Big( \mathbf x; f, \theta \Big)$
+		\State $\sigma \leftarrow \sigma + w(T)$
+		\EndFor
+		\State \Return $\sigma/k$
+	\end{algorithmic}
+	\caption{$\hat\sigma(x)$ estimate of $\sigma(x)$ for fractional influence} \label{alg:sigma}
+\end{algorithm}
+
+%%%%%%% Fractional greedy
+\begin{algorithm}[H]
+	\algorithmicrequire { set function $f$, weight function $w$, thresholds distr. $\Theta$, budget $b$}
+	\begin{algorithmic}
+		\State Initialize $\mathbf{x_0} \leftarrow \mathbf{0}$, $i\leftarrow 0$
+		\While {$\mathbf{1}^T\mathbf{x_i} < b$}
+		\State $S_i = \{\text{node } v | \mathbf{x_i}[v] > 0\}$
+		\For {node $v \notin S_i$}
+		\State $\mathbf{x_v} = \mathbf{x_i} + \Big( \theta_{\max}[v] - \Gamma^+(v,S_i)\Big) \mathbf{1}_{v}$
+		\State $\mathbf{q}[v] = \hat\sigma\Big(\mathbf{x_v}; f, \Theta, w \Big)$
+		\EndFor
+		\State $u = \arg\max \mathbf{q}$
+		\State $\mathbf{x_{i+1}} \leftarrow \mathbf{x_i} + \Big( \theta_{\max}[u] - \Gamma^+(u,S_i)\Big) \mathbf{1}_{u}$, $i\leftarrow i + 1$
+		\EndWhile
+		\If {$\mathbf{1}^T\mathbf{x_i} \leq b$}
+		\State \Return $\mathbf{x_i}$
+		\Else
+		\State \Return $\mathbf{x_{i-1}}$
+		\EndIf
+	\end{algorithmic}
+	\caption{\texttt{GreedyFracInfMax} = Greedy algorithm for fractional influence maximization} \label{alg:frac_greedy}
+\end{algorithm}
+
+
+
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%% \Gamma^+
+\begin{algorithm}[H]
+	\algorithmicrequire { set $A$, set function $f$, node $v$}
+	\begin{algorithmic}
+		\State \Return $f(A)[v]$
+	\end{algorithmic}
+	\caption{$\Gamma^+(v,A)$ = total sum of weight of edges from set $A$ to node $v$} \label{alg:gamma_plus}
+\end{algorithm}
+
+%%%%%%% \Gamma^-
+\begin{algorithm}[H]
+	\algorithmicrequire { set $A$, set function $f$, node $v$}
+	\begin{algorithmic}
+		\State \Return $\mathbf{1}_A^T f(\{v\})$
+	\end{algorithmic}
+	\caption{$\Gamma^-(v,A)$ = total sum of weight of edges from node $v$ to set $A$} \label{alg:gamma_neg}
+\end{algorithm}
+
+%%%%%%% DiscountFrac heuristic for greedy algorithm
+\begin{algorithm}[H]
+	\algorithmicrequire { set function $f$, weight function $w$, thresholds distr. $\Theta$, budget $b$}
+	\begin{algorithmic}
+		\State Initialize $\mathbf{x_0} \leftarrow \mathbf{0}$, $i\leftarrow 0$
+		\While {$\mathbf{1}^T\mathbf{x_i} < b$}
+		\State $S_i = \{\text{node } v | \mathbf{x_i}[v] > 0\}$
+		\For {node $v \notin S_i$}
+		\State $\mathbf{q}[v] = \Gamma^-(v, V\backslash S_i)$
+		\EndFor
+		\State $u = \arg\max \mathbf{q}$
+		\State $\mathbf{x_{i+1}} \leftarrow \mathbf{x_i} + \Big( \theta_{\max}[u] - \Gamma^+(u,S_i)\Big) \mathbf{1}_{u}$, $i\leftarrow i + 1$
+		\EndWhile
+		\If {$\mathbf{1}^T\mathbf{x_i} \leq b$}
+		\State \Return $\mathbf{x_i}$
+		\Else
+		\State \Return $\mathbf{x_{i-1}}$
+		\EndIf
+	\end{algorithmic}
+	\caption{\texttt{DiscountFrac} heuristic algorithm} \label{alg:frac_greedy}
+\end{algorithm}
+
+
+
+
+
+\begin{thebibliography}{}
+	
+	\bibitem{kempe03}
+	Kempe, D., Kleinberg, J., Tardos, E. (2003).
+	\newblock Maximizing the spread of influence through a social network.
+	\newblock In {\em KDD}, ACM, 137-146.
+	
+	\bibitem{mossel07}
+	Mossel, E., Roch, S. (2007).
+	\newblock On the submodularity of influence in social networks.
+	\newblock In {\em STOC}, ACM, 128-134.
+	
+	\bibitem{demaine14}
+	Demaine, E., Hajiaghayi, M.T., Mahini, H., Malec, D., Raghavan, S., Sawant, A., Zadimoghadam, M. (2014).
+	\newblock How to influence people with partial incentives.
+	\newblock In {\em WWW}, ACM, 937-948.
+
+\end{thebibliography}
+
+\end{document}
